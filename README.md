@@ -130,3 +130,9 @@ three systems in your current directory.
   specific nixpkgs revision (the one pinned in `flake.lock`). As the binary
   cache changes over time, the snapshot becomes outdated, and you'll need
   to re-run the scrape.
+- For the best experience, use a Nix version that includes
+  [NixOS/nix#15726](https://github.com/NixOS/nix/pull/15726). Without it,
+  commands like `nix build .#hello.out` can fail outright instead of
+  falling back to another location (like `legacyPackages`) when an
+  attribute doesn't resolve the way Nix expects — which fake derivations,
+  by their nature, can run into.
