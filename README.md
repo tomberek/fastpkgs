@@ -37,12 +37,14 @@ straight from that saved data.
    - `legacyPackages.<system>.json.min` — a shrunk-down version: anything
      not cached is dropped (shown as `null`), and anything cached is
      reduced to just `[outputs]`. **This is the only one of these files
-     that actually gets committed** to the repo. The rest are large,
-     throwaway files created fresh each time the scrape runs.
+     that matters past the scrape** — see the next step for what happens
+     to it. The rest are large, throwaway files created fresh each time
+     the scrape runs.
 
 2. **Rebuild fake derivations** (`flake.nix`, `mkFakeDerivation.nix`,
    `mapAttrsRecursiveCondFunc.nix`): When the flake is evaluated, it reads
-   the `.min` JSON snapshot and walks through it recursively
+   the `.min` JSON snapshot — fetched via a `flake = false` input, not read
+   from the repo tree (see step 3) — and walks through it recursively
    (`mapAttrsRecursiveCondFunc.nix` is a general-purpose helper for walking
    a tree conditionally) to rebuild a tree shaped just like nixpkgs'
    `legacyPackages`. Each cached entry at the bottom of that tree becomes a
@@ -56,32 +58,46 @@ straight from that saved data.
    You can still reach the real, original nixpkgs package through
    `.original`.
 
-3. **Expose it as flake outputs** (`flake.nix`): The flake's outputs —
+3. **Publish and consume the snapshots as release assets** (`scripts/upload-release.sh`,
+   `flake.nix`): The `.min` files aren't committed to the repo. Instead,
+   `scripts/upload-release.sh` uploads them as assets on a new GitHub
+   Release, and `flake.nix` declares one `flake = false` input per system
+   (`data-x86_64-linux`, `data-aarch64-linux`, `data-aarch64-darwin`)
+   pointing at that release's download URLs. `flake.lock` pins their exact
+   content hash, just like any other flake input. To publish a fresh
+   snapshot: run `scripts/scrape.sh`, then `scripts/upload-release.sh
+   <tag>`, update the URLs in `flake.nix` to the new tag, and run `nix
+   flake lock`.
+
+4. **Expose it as flake outputs** (`flake.nix`): The flake's outputs —
    `packages`, `legacyPackages`, and `apps`, one set per system — are all
-   built from the `.min` snapshots using `lib.packagesFromJSON`.
-   `originalPackages` holds the real, unchanged nixpkgs input, in case you
-   want to compare against it or fall back to it.
-   `packages.<system>.default` bundles the three systems' `.min` snapshots
-   together with the flake's own files into one archive, `fast.tar.xz` —
-   this is the file this repo is meant to publish as a release.
+   built from the `.min` snapshots (via those data inputs) using
+   `lib.packagesFromJSON`. `originalPackages` holds the real, unchanged
+   nixpkgs input, in case you want to compare against it or fall back to
+   it. `packages.<system>.default` bundles the three systems' `.min`
+   snapshots together with the flake's own files into one archive,
+   `fast.tar.xz` — this is the file this repo is meant to publish as a
+   release.
 
 ## Repo layout
 
 | Path | Purpose |
 | --- | --- |
-| `flake.nix` | The flake's outputs: the fake package/app sets, the code that loads the snapshot, and the default release tarball. |
+| `flake.nix` | The flake's outputs: the fake package/app sets, the data-input declarations, and the default release tarball. |
 | `mkFakeDerivation.nix` | Builds one fake derivation attrset from one entry in the snapshot. |
 | `mapAttrsRecursiveCondFunc.nix` | A general-purpose, conditional, recursive `mapAttrs`, used to walk the snapshot tree. |
 | `default.nix` | A `flake-compat` shim, so the flake also works with older, non-flake Nix commands. |
 | `scripts/scrape.sh` | Regenerates the `legacyPackages.<system>.json*` snapshot files by running `nix-eval-jobs`. |
-| `legacyPackages.<system>.json.min` | The committed, shrunk-down cache-status snapshots — this is the actual data the repo ships. |
+| `scripts/upload-release.sh` | Publishes the `.min` snapshots as assets on a new GitHub Release. |
 | `gcroots/` | A directory `nix-eval-jobs` uses to hold GC roots while scraping. It's local only and never committed. |
 
 Only a handful of files are tracked in git: `flake.nix`, `flake.lock`, the
-two helper `.nix` files, `scripts/scrape.sh`, and the three `*.json.min`
-snapshot files. The `.raw`, `.pre`, and full (uncompressed) `.json` files,
-along with `gcroots/`, are just large leftover files from running the
-scraper on your own machine — they aren't meant to be kept.
+two helper `.nix` files, and the two scripts. Nothing under
+`legacyPackages.*.json*` is committed — those are either large scratch
+output from running the scraper locally (`.raw`, `.pre`, the uncompressed
+`.json`), or the `.min` snapshot, which is hosted as a GitHub Release asset
+and pulled in through `flake.lock` instead (see "How it works" above).
+`gcroots/` is likewise local-only scratch output.
 
 ## Usage
 
@@ -116,6 +132,16 @@ nix run .#local.x86_64-linux.scrape -- github:NixOS/nixpkgs
 Running this replaces the `legacyPackages.<system>.json*` files for all
 three systems in your current directory.
 
+To publish a fresh snapshot after scraping (needs push access to the repo
+and a `gh` login):
+
+```sh
+scripts/upload-release.sh data-YYYYMMDD
+```
+
+Then update the URLs in `flake.nix`'s `data-*` inputs to the new tag, and
+run `nix flake lock` to pin them.
+
 ## Caveats
 
 - A package only shows up with a real output if it happened to be cached in
@@ -136,13 +162,7 @@ three systems in your current directory.
   falling back to another location (like `legacyPackages`) when an
   attribute doesn't resolve the way Nix expects — which fake derivations,
   by their nature, can run into.
-
-## Future ideas
-
-- Right now the `.min` snapshots live in git, which isn't a great fit for
-  files this large and this frequently regenerated. A better path forward:
-  host them elsewhere (e.g. GitHub Releases) instead of committing them,
-  add a script to upload each `legacyPackages.<system>.json.min` as a
-  release artifact, and have the flake pull them in as `flake = false`
-  inputs pinned in `flake.lock`, rather than reading them straight out of
-  the repo's own tree.
+- Publishing a new snapshot is a two-step, manual process: run
+  `scripts/upload-release.sh`, then hand-edit the tag baked into
+  `flake.nix`'s `data-*` input URLs and re-run `nix flake lock`. Nothing
+  automates that edit yet.
