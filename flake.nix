@@ -5,6 +5,24 @@
   };
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/2fcb964de67fcf60b43471c55d5d99e61a9ccb5a";
 
+  # Cache-status snapshots, hosted as release assets instead of committed to
+  # the repo tree. Regenerate with scripts/scrape.sh, publish with
+  # scripts/upload-release.sh, then `nix flake lock` to pin the new tag.
+  # The "file+" prefix tells Nix to fetch this as a single flat file rather
+  # than an archive to unpack.
+  inputs.data-x86_64-linux = {
+    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.x86_64-linux.json.min";
+    flake = false;
+  };
+  inputs.data-aarch64-linux = {
+    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.aarch64-linux.json.min";
+    flake = false;
+  };
+  inputs.data-aarch64-darwin = {
+    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.aarch64-darwin.json.min";
+    flake = false;
+  };
+
   outputs = _: {
     # WIP: still working on the interface
 
@@ -61,50 +79,46 @@
     lib.mkFakePackageSetFromListToPaths = _.self.lib.mkFakePackageSetHelper _.self.lib.fromList _.self.lib.mkFakeOutPathFromList;
     lib.mkFakeAppSetFromListToPaths = _.self.lib.mkFakePackageSetHelper _.self.lib.fromList _.self.lib.mkFakeAppFromList;
 
+    # Maps each system to the flake input holding that system's snapshot data.
+    lib.dataInputs = {
+      x86_64-linux = _.data-x86_64-linux;
+      aarch64-linux = _.data-aarch64-linux;
+      aarch64-darwin = _.data-aarch64-darwin;
+    };
+
     lib.packagesFromJSON =
-      helper: suffix:
+      helper:
       builtins.mapAttrs
         (
           system: pkgs:
           (
-            helper _.self.originalPackages.legacyPackages.${system} (
-              ./. + "/legacyPackages.${system}.json" + suffix
-            )
+            helper _.self.originalPackages.legacyPackages.${system} _.self.lib.dataInputs.${system}.outPath
             // {
               # Default build is to build a release.
               default = _.self.originalPackages.legacyPackages.${system}.callPackage (
                 {
-                  jq,
                   gnutar,
                   runCommand,
                   self ? _.self.outPath,
+                  dataInputs ? _.self.lib.dataInputs,
                 }:
                 runCommand "fast.tar.xz"
                   {
                     src = self;
-                    nativeBuildInputs = [
-                      jq
-                      gnutar
-                    ];
+                    nativeBuildInputs = [ gnutar ];
                   }
                   ''
                     mkdir toplevel
-
-                    for i in legacyPackages.{{x86_64,aarch64}-linux,aarch64-darwin}.json; do
-                      echo minimizing $i
-                      jq -c 'walk(
-                        if type == "object" and has("isCached") and has("name") and has("outputs") and (length == 3)
-                        then 
-                          if .isCached == null
-                          then null
-                          else [ .outputs ] end
-                        else . end)' $src/$i > toplevel/$i.min &
-                    done
-                    wait
-                    echo compressing
+                    ${builtins.concatStringsSep "\n" (
+                      builtins.attrValues (
+                        builtins.mapAttrs (
+                          sys: input:
+                          "cp ${input.outPath} toplevel/legacyPackages.${sys}.json.min"
+                        ) dataInputs
+                      )
+                    )}
                     cp -t toplevel $src/flake.lock $src/*.nix
                     tar -cJf $out toplevel
-                    echo done
                   ''
               ) { };
             }
@@ -116,14 +130,14 @@
           aarch64-darwin = { };
         };
 
-    packages = _.self.lib.packagesFromJSON _.self.lib.mkFakePackageSetFromListToPaths ".min";
-    legacyPackages = _.self.lib.packagesFromJSON _.self.lib.mkFakePackageSetFromList ".min";
+    packages = _.self.lib.packagesFromJSON _.self.lib.mkFakePackageSetFromListToPaths;
+    legacyPackages = _.self.lib.packagesFromJSON _.self.lib.mkFakePackageSetFromList;
 
     originalPackages = _.nixpkgs;
 
     inputs = _;
 
-    apps = _.self.lib.packagesFromJSON _.self.lib.mkFakeAppSetFromListToPaths ".min";
+    apps = _.self.lib.packagesFromJSON _.self.lib.mkFakeAppSetFromListToPaths;
 
     local.x86_64-linux.scrape = {
       type = "app";

@@ -1,5 +1,41 @@
 {
   "nodes": {
+    "data-aarch64-darwin": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-pQV7SriqBMhL9H/lUhdjcxphovLdg3xMKTwjTu9DXt0=",
+        "type": "file",
+        "url": "https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.aarch64-darwin.json.min"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.aarch64-darwin.json.min"
+      }
+    },
+    "data-aarch64-linux": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-WjMlg2DeV/z3x/1vU0EO+T78u6Jwt6WSwt+BQcN5T84=",
+        "type": "file",
+        "url": "https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.aarch64-linux.json.min"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.aarch64-linux.json.min"
+      }
+    },
+    "data-x86_64-linux": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-XF0gEGxo6qNqSswNsB3FZEwhM2iVHPfI9v0G8C11zOE=",
+        "type": "file",
+        "url": "https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.x86_64-linux.json.min"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/tomberek/fastpkgs/releases/download/data-20260813/legacyPackages.x86_64-linux.json.min"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -34,6 +70,9 @@
     },
     "root": {
       "inputs": {
+        "data-aarch64-darwin": "data-aarch64-darwin",
+        "data-aarch64-linux": "data-aarch64-linux",
+        "data-x86_64-linux": "data-x86_64-linux",
         "flake-compat": "flake-compat",
         "nixpkgs": "nixpkgs"
       }

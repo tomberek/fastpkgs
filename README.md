@@ -136,3 +136,13 @@ three systems in your current directory.
   falling back to another location (like `legacyPackages`) when an
   attribute doesn't resolve the way Nix expects — which fake derivations,
   by their nature, can run into.
+
+## Future ideas
+
+- Right now the `.min` snapshots live in git, which isn't a great fit for
+  files this large and this frequently regenerated. A better path forward:
+  host them elsewhere (e.g. GitHub Releases) instead of committing them,
+  add a script to upload each `legacyPackages.<system>.json.min` as a
+  release artifact, and have the flake pull them in as `flake = false`
+  inputs pinned in `flake.lock`, rather than reading them straight out of
+  the repo's own tree.
