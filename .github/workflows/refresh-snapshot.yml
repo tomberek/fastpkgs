@@ -37,8 +37,22 @@ jobs:
 
       - name: Scrape cache status
         run: |
+          # nix-eval-jobs prints a full Nix stack trace to stdout for every
+          # removed/aliased attribute (there are thousands in nixpkgs); piped
+          # live into the Actions log that burst of output gets the step
+          # cancelled by GitHub's log streaming. Redirect to a file instead.
           nix shell nixpkgs#jq nixpkgs#nix-eval-jobs --command \
-            bash scripts/scrape.sh "github:NixOS/nixpkgs/${{ steps.nixpkgs.outputs.rev }}"
+            bash scripts/scrape.sh "github:NixOS/nixpkgs/${{ steps.nixpkgs.outputs.rev }}" \
+            > scrape.log 2>&1 || { tail -c 20000 scrape.log; exit 1; }
+          tail -n 40 scrape.log
+
+      - name: Upload scrape log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-log
+          path: scrape.log
+          retention-days: 7
 
       - name: Upload snapshot as a release
         id: release
