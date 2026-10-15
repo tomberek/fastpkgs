@@ -6,24 +6,16 @@ on:
     - cron: "0 5 * * 1"
   workflow_dispatch: {}
 
-permissions:
-  contents: write
-
 concurrency:
   group: refresh-snapshot
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  resolve:
     runs-on: ubuntu-latest
-    # GitHub-hosted runners hard-cap jobs at 6h regardless of this setting.
-    # If a full nixpkgs eval across all three systems routinely runs longer
-    # than that, this job will start failing and needs a bigger/self-hosted
-    # runner.
-    timeout-minutes: 350
+    outputs:
+      rev: ${{ steps.nixpkgs.outputs.rev }}
     steps:
-      - uses: actions/checkout@v4
-
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
@@ -35,24 +27,65 @@ jobs:
           rev=$(nix flake metadata github:NixOS/nixpkgs --json | jq -r '.locked.rev')
           echo "rev=$rev" >> "$GITHUB_OUTPUT"
 
-      - name: Scrape cache status
+  scrape:
+    needs: resolve
+    runs-on: ubuntu-latest
+    # GitHub-hosted runners hard-cap jobs at 6h regardless of this setting.
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [x86_64-linux, aarch64-linux, aarch64-darwin]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Scrape cache status for ${{ matrix.system }}
+        env:
+          # One system per job, with fewer evaluator workers, to keep peak
+          # memory/disk per job low enough for a standard hosted runner.
+          NIX_EVAL_JOBS_WORKERS: "2"
         run: |
-          # nix-eval-jobs prints a full Nix stack trace to stdout for every
-          # removed/aliased attribute (there are thousands in nixpkgs); piped
-          # live into the Actions log that burst of output gets the step
-          # cancelled by GitHub's log streaming. Redirect to a file instead.
           nix shell nixpkgs#jq nixpkgs#nix-eval-jobs --command \
-            bash scripts/scrape.sh "github:NixOS/nixpkgs/${{ steps.nixpkgs.outputs.rev }}" \
-            > scrape.log 2>&1 || { tail -c 20000 scrape.log; exit 1; }
-          tail -n 40 scrape.log
+            bash scripts/scrape.sh "github:NixOS/nixpkgs/${{ needs.resolve.outputs.rev }}" "${{ matrix.system }}" \
+            2>&1 | tee scrape-${{ matrix.system }}.log
 
       - name: Upload scrape log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-log
-          path: scrape.log
+          name: scrape-log-${{ matrix.system }}
+          path: scrape-${{ matrix.system }}.log
           retention-days: 7
+
+      - name: Upload snapshot data
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-${{ matrix.system }}
+          path: legacyPackages.${{ matrix.system }}.json.min
+          retention-days: 7
+
+  publish:
+    needs: [resolve, scrape]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: data-*
+          merge-multiple: true
 
       - name: Upload snapshot as a release
         id: release
@@ -67,7 +100,7 @@ jobs:
       - name: Bump flake.nix to the new snapshot and nixpkgs revision
         run: |
           sed -i -E "s#releases/download/data-[0-9]{8}#releases/download/${{ steps.release.outputs.tag }}#g" flake.nix
-          sed -i -E "s#(inputs\.nixpkgs\.url = \"github:NixOS/nixpkgs/)[0-9a-f]+(\")#\1${{ steps.nixpkgs.outputs.rev }}\2#" flake.nix
+          sed -i -E "s#(inputs\.nixpkgs\.url = \"github:NixOS/nixpkgs/)[0-9a-f]+(\")#\1${{ needs.resolve.outputs.rev }}\2#" flake.nix
           nix flake lock
 
       - name: Commit and push
@@ -79,5 +112,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add flake.nix flake.lock
-          git commit -m "Bump snapshot to ${{ steps.release.outputs.tag }} (nixpkgs ${{ steps.nixpkgs.outputs.rev }})"
+          git commit -m "Bump snapshot to ${{ steps.release.outputs.tag }} (nixpkgs ${{ needs.resolve.outputs.rev }})"
           git push
