@@ -3,7 +3,7 @@
     url = "github:NixOS/flake-compat";
     flake = false;
   };
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/3f5995693ea45d8cee6ceae0f8a72b46ebcfcca0";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/ca8dce05e2a77f02717af17b8084ecf8314dae65";
 
   # Cache-status snapshots, hosted as release assets instead of committed to
   # the repo tree. Regenerate with scripts/scrape.sh, publish with
@@ -11,15 +11,15 @@
   # The "file+" prefix tells Nix to fetch this as a single flat file rather
   # than an archive to unpack.
   inputs.data-x86_64-linux = {
-    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20261015/legacyPackages.x86_64-linux.json.min";
+    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20261019/legacyPackages.x86_64-linux.json.min";
     flake = false;
   };
   inputs.data-aarch64-linux = {
-    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20261015/legacyPackages.aarch64-linux.json.min";
+    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20261019/legacyPackages.aarch64-linux.json.min";
     flake = false;
   };
   inputs.data-aarch64-darwin = {
-    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20261015/legacyPackages.aarch64-darwin.json.min";
+    url = "file+https://github.com/tomberek/fastpkgs/releases/download/data-20261019/legacyPackages.aarch64-darwin.json.min";
     flake = false;
   };
 
